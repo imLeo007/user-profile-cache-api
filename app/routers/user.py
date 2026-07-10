@@ -30,7 +30,7 @@ SessionDB = Annotated[AsyncSession, Depends(get_db)]
 
 CACHE_TTL = 240
 
-# first endpoint add the user
+# Add a user
 
 @router.post("/users", response_model=UserResponse)
 async def add_user(data:UserModel, db: SessionDB) -> UserResponse:
@@ -56,7 +56,7 @@ async def add_user(data:UserModel, db: SessionDB) -> UserResponse:
 
     return user
 
-# seconds endoint get all users
+# Get all users
 
 @router.get("/users", response_model=list[UserResponse])
 async def get_all(db: SessionDB) -> list[UserResponse]:
@@ -69,7 +69,7 @@ async def get_all(db: SessionDB) -> list[UserResponse]:
     
     return users
 
-# get one user
+# Get user, if available in cache get from redis
 
 @router.get("/users/{username}", response_model=UserResponse)
 async def get_one(username: str, db: SessionDB) -> UserResponse:
@@ -100,7 +100,7 @@ async def get_one(username: str, db: SessionDB) -> UserResponse:
 
     return user
 
-# edit one user
+# Edit user: name and bio, is_active
 
 @router.patch("/users/{username}/profile", response_model=UserResponse)
 async def edit_user(username: str, data: UserEdit, db: SessionDB) -> UserResponse:
@@ -125,7 +125,7 @@ async def edit_user(username: str, data: UserEdit, db: SessionDB) -> UserRespons
 
     return user
 
-# delete one user and from cache as well
+# Delete user from db, cache as well
 
 @router.delete("/users/{username}", response_model=UserResponse)
 async def delete_user(username: str, db: SessionDB) -> UserResponse:
@@ -146,7 +146,7 @@ async def delete_user(username: str, db: SessionDB) -> UserResponse:
 
     return user
 
-# delete user cache
+# Delete user cache
 
 @router.delete("/users/{username}/cache")
 async def delete_cache(username: str) -> dict:
