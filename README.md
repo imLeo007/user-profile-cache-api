@@ -1,75 +1,214 @@
 # User Profile Cache API
 
-A production-style backend project built while learning modern backend engineering concepts such as Docker, Redis caching, database migrations, and scalable API architecture.
+A backend project built to understand one important question:
+
+**What should happen when the same data is requested again and again?**
+
+Instead of treating this as another CRUD application, I used the project to learn how caching can make repeated reads faster while still keeping the data correct.
 
 ---
 
-# Why this project exists
+## Why I Built This
 
-At this stage of the learning journey, the primary goal was not simply to create another CRUD API.
+A normal API can read a user profile directly from the database every time it is requested.
 
-The goal was to understand:
+That works.
 
-* How Docker containers communicate with each other.
-* How Redis can reduce database load.
-* How production APIs cache frequently accessed data.
-* How database migrations are handled using Alembic.
-* How modern backend projects organize their codebase.
+But if the same profile is requested repeatedly, asking the database for the same information every time is unnecessary.
 
-This project implements the **Cache Aside Pattern**, one of the most common caching strategies used in production systems.
+So this project introduces a cache between the application and the database.
 
-Instead of querying PostgreSQL for every request:
+The main idea is simple:
 
 ```text
-Client Request
-    ↓
-Redis Cache
-    ↓
-Cache Hit → Return immediately
-Cache Miss → Query PostgreSQL → Store in Redis → Return
+Request
+   ↓
+Check Cache
+   ↓
+ ┌───────────────┐
+ │               │
+Hit             Miss
+ │               │
+Return       Read Database
+                 ↓
+             Save to Cache
+                 ↓
+               Return
 ```
 
-This dramatically reduces database load and improves response times.
+The interesting part was not simply making reads faster.
+
+The real challenge was making sure the cached data **never became stale after an update or delete**.
+
+That is what made this project useful.
 
 ---
 
-# Technologies Used
+## The Main Idea — Cache Aside
 
-## FastAPI
+The application follows a simple rule:
 
-Used for building asynchronous REST APIs.
+**Check the cache first. Use the database when needed.**
 
-## PostgreSQL
+For a profile request:
 
-Acts as the source of truth and stores persistent user profile information.
+```text
+User Request
+     ↓
+FastAPI
+     ↓
+Redis
+     ↓
+Cache Hit?
+   ↙     ↘
+ Yes     No
+ ↓        ↓
+Return   PostgreSQL
+          ↓
+       Save Result
+       in Redis
+          ↓
+        Return
+```
 
-## Redis
+When a profile changes:
 
-Used as an in-memory cache to store frequently accessed user profiles.
+```text
+Update Database
+      ↓
+Remove Old Cache
+      ↓
+Next Request Gets Fresh Data
+```
 
-## SQLAlchemy
-
-Provides ORM functionality for interacting with PostgreSQL.
-
-## Alembic
-
-Handles database migrations and schema evolution.
-
-## Docker
-
-Containerizes the application and its dependencies.
-
-## Docker Compose
-
-Manages communication between:
-
-* API container
-* PostgreSQL container
-* Redis container
+This keeps performance and correctness working together.
 
 ---
 
-# Project Structure
+## Pipeline
+
+> The clean architecture diagram for this section will show how **FastAPI, Redis, PostgreSQL, and Docker** work together.
+
+![User Profile Cache API Pipeline](screenshots/user-profile-cache-api.png)
+
+---
+
+## What the Project Can Do
+
+- Create user profiles
+- Retrieve all profiles
+- Retrieve a single profile
+- Cache frequently requested profiles
+- Update part of a profile
+- Delete profiles
+- Automatically expire cached entries
+- Remove stale cache after updates and deletes
+- Run the application as multiple connected services
+- Apply database migrations safely
+
+---
+
+## What Happens During a Read?
+
+Imagine a user requests:
+
+```text
+/users/10
+```
+
+### First request
+
+Redis does not have the profile yet.
+
+```text
+Request
+   ↓
+Redis
+   ↓
+MISS
+   ↓
+PostgreSQL
+   ↓
+Profile Found
+   ↓
+Store in Redis
+   ↓
+Return Profile
+```
+
+### Next request
+
+```text
+Request
+   ↓
+Redis
+   ↓
+HIT
+   ↓
+Return Profile
+```
+
+The second request avoids another database read.
+
+---
+
+## What Happens During an Update?
+
+Caching introduces an important problem.
+
+Suppose Redis contains:
+
+```text
+Name: Alex
+Age: 21
+```
+
+Then the database is updated to:
+
+```text
+Name: Alex
+Age: 22
+```
+
+If the cached version stays untouched, users may continue receiving the old value.
+
+So after an update:
+
+```text
+Update PostgreSQL
+       ↓
+Delete Cached Profile
+       ↓
+Next Request
+       ↓
+Read Fresh Database Value
+       ↓
+Cache Again
+```
+
+This is **cache invalidation**.
+
+It was one of the most important ideas I wanted to understand through this project.
+
+---
+
+## What Happens During a Delete?
+
+The same rule applies when a profile is deleted.
+
+```text
+Delete From Database
+        ↓
+Delete From Cache
+        ↓
+Profile No Longer Exists
+```
+
+The cache should never behave as though deleted data still exists.
+
+---
+
+## Project Structure
 
 ```text
 user_profile_api/
@@ -91,7 +230,7 @@ user_profile_api/
 │   └── main.py
 │
 ├── alembic/
-│
+├── screenshots/
 ├── Dockerfile
 ├── docker-compose.yml
 ├── requirements.txt
@@ -99,119 +238,152 @@ user_profile_api/
 └── README.md
 ```
 
-This structure separates:
-
-* Infrastructure code
-* Database models
-* Request and response schemas
-* API routes
-* Application startup logic
-
-which closely resembles production backend projects.
+The application is split so database logic, caching, API routes, validation, and startup behaviour remain easy to understand independently.
 
 ---
 
-# Features
+## Running the Project
 
-* Create user profiles
-* Retrieve all users
-* Retrieve a single user using Redis caching
-* Partial profile updates using PATCH requests
-* Delete user profiles
-* Cache invalidation after updates and deletes
-* Automatic Redis expiration using TTL
+Clone the repository:
+
+```bash
+git clone https://github.com/imLeo007/user-profile-cache-api.git
+cd user-profile-cache-api
+```
+
+Create your environment variables, then start the services:
+
+```bash
+docker compose up --build
+```
+
+Run the database migrations:
+
+```bash
+docker compose exec api alembic upgrade head
+```
+
+Open the API documentation:
+
+```text
+http://localhost:8000/docs
+```
+
+Live API:
+
+```text
+https://user-profile-cache-api.onrender.com/docs
+```
 
 ---
 
-# Application Screenshots
+## Application Preview
 
-## Swagger API Documentation
-
-### Swagger Overview
+### API Overview
 
 ![Swagger Overview](screenshots/Swagger_UI.png)
 
-### Creating User
+### Creating a User
 
 ![Create User](screenshots/add_user.png)
 
-### Get cached User
+### Reading a Cached User
 
 ![Get Cached User](screenshots/user_cache.png)
 
-### Cache Miss
-
-![Cache Miss Flow](screenshots/cache_miss.png)
-
 ---
 
-## Docker Containers
+## What I Learned
 
-![Docker Containers](screenshots/docker_containers.png)
+This project changed how I think about caching.
 
----
-
-## Redis Keys
-
-![Redis Keys](screenshots/cache_hit.png)
-
----
-
-# What comes next
-
-This project is part of a larger backend engineering roadmap.
-
-The next steps are:
-
-## Docker
-
-* More complex multi-container applications
-* Improved Compose workflows
-* Production container practices
-
-## Redis
-
-* Advanced caching strategies
-* Session management
-* Rate limiting
-* Background task queues
-
-## Celery
-
-* Background workers
-* Asynchronous task processing
-* Email tasks
-* Long running jobs
-* Scheduled tasks
-
-## Cloud Deployment
-
-* Deploying containerized applications
-* Learning cloud infrastructure concepts
-* Working with managed databases and services
-
-## Retrieval Augmented Generation (RAG)
-
-Eventually these backend skills will support production-grade AI systems involving:
-
-* Vector databases
-* Embeddings
-* Background document processing
-* Retrieval pipelines
-* AI application architecture
-
----
-
-# Learning Journey
-
-This repository represents an important step in the transition from:
+Before building it, caching looked like:
 
 ```text
-Building CRUD applications
+Store data in Redis
+→ make things faster
 ```
 
-to
+After building it, the real idea became:
 
 ```text
-Designing backend systems.
+Read efficiently
+        +
+Keep cached data correct
+        +
+Know when the database must remain the source of truth
 ```
+
+The important lesson was:
+
+**Performance is useful only when correctness is preserved.**
+
+---
+
+## Why This Project Matters
+
+This project was one of my first steps from building simple CRUD applications toward thinking about how backend systems behave as a whole.
+
+It introduced several questions that matter in larger systems:
+
+```text
+Where should data come from?
+
+What happens when cached data becomes old?
+
+Which system is the source of truth?
+
+When should cached information expire?
+
+What should happen after an update or delete?
+
+How should multiple services communicate?
+```
+
+Understanding those questions became more valuable than simply learning another library.
+
+---
+
+## Project Progression
+
+```text
+CRUD API
+   ↓
+Persistent Database
+   ↓
+Caching
+   ↓
+Cache Invalidation
+   ↓
+Multiple Services
+   ↓
+Deployment
+   ↓
+More Reliable Backend Systems
+```
+
+This project became an important foundation for the more complex backend and AI systems I started building afterward.
+
+---
+
+## Final Note
+
+The purpose of this repository is not to demonstrate a complicated product.
+
+It is to demonstrate a simple backend idea **properly**:
+
+> Keep frequently requested data close to the application, keep the database as the source of truth, and make sure the two never disagree.
+
+That principle looks simple on paper.
+
+Building it made me understand why it matters.
+
+---
+
+## Links
+
+**GitHub:**  
+https://github.com/imLeo007/user-profile-cache-api
+
+**Live API:**  
+https://user-profile-cache-api.onrender.com/docs
